@@ -1,5 +1,3 @@
-// services/database/native.ts
-import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 
 export interface Database {
@@ -9,70 +7,79 @@ export interface Database {
   withTransactionAsync<T>(callback: () => Promise<T>): Promise<T>;
 }
 
-// Implementação mock para web
-class WebDatabase implements Database {
-  async getAllAsync<T>(query: string, params?: any[]): Promise<T[]> {
-    console.warn('SQLite não disponível na web - retornando dados mock');
-    return [] as T[];
-  }
-  
-  async getFirstAsync<T>(query: string, params?: any[]): Promise<T | null> {
-    console.warn('SQLite não disponível na web - retornando null');
-    return null;
-  }
-  
-  async runAsync(query: string, params?: any[]): Promise<{ lastInsertRowId: number; changes: number }> {
-    console.warn('SQLite não disponível na web - operação simulada');
-    return { lastInsertRowId: 0, changes: 0 };
-  }
-  
-  async withTransactionAsync<T>(callback: () => Promise<T>): Promise<T> {
-    console.warn('SQLite não disponível na web - executando callback sem transação');
-    return await callback();
+// Dynamic import para evitar erro na web
+let SQLite: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    SQLite = require('expo-sqlite');
+  } catch (error) {
+    console.warn('expo-sqlite não disponível nesta plataforma');
   }
 }
 
-// Implementação real para native
 class NativeDatabase implements Database {
-  private db: SQLite.SQLiteDatabase;
+  private db: any = null;
   
   constructor() {
-    this.db = SQLite.openDatabaseSync('promocoes.db');
+    if (SQLite) {
+      try {
+        this.db = SQLite.openDatabaseSync('promocoes.db');
+      } catch (error) {
+        console.error('Erro ao abrir banco SQLite:', error);
+      }
+    }
   }
   
   async getAllAsync<T>(query: string, params?: any[]): Promise<T[]> {
+    if (!this.db) {
+      console.warn('Database não disponível');
+      return [] as T[];
+    }
+    
     try {
+      // REMOVER OS <T> DOS MÉTODOS - o SQLite não tem tipagem
       if (params && params.length > 0) {
-        const result = await this.db.getAllAsync<T>(query, params);
-        return result;
+        const result = await this.db.getAllAsync(query, params);
+        return result as T[];
       } else {
-        const result = await this.db.getAllAsync<T>(query);
-        return result;
+        const result = await this.db.getAllAsync(query);
+        return result as T[];
       }
     } catch (error) {
       console.error('Erro ao executar getAllAsync:', error);
-      throw error;
+      return [] as T[];
     }
   }
   
   async getFirstAsync<T>(query: string, params?: any[]): Promise<T | null> {
+    if (!this.db) {
+      console.warn('Database não disponível');
+      return null;
+    }
+    
     try {
+      // REMOVER OS <T> DOS MÉTODOS
       if (params && params.length > 0) {
-        const result = await this.db.getFirstAsync<T>(query, params);
-        return result;
+        const result = await this.db.getFirstAsync(query, params);
+        return result as T | null;
       } else {
-        const result = await this.db.getFirstAsync<T>(query);
-        return result;
+        const result = await this.db.getFirstAsync(query);
+        return result as T | null;
       }
     } catch (error) {
       console.error('Erro ao executar getFirstAsync:', error);
-      throw error;
+      return null;
     }
   }
   
   async runAsync(query: string, params?: any[]): Promise<{ lastInsertRowId: number; changes: number }> {
+    if (!this.db) {
+      console.warn('Database não disponível');
+      return { lastInsertRowId: 0, changes: 0 };
+    }
+    
     try {
-      let result: SQLite.SQLiteRunResult;
+      let result: any;
       
       if (params && params.length > 0) {
         result = await this.db.runAsync(query, params);
@@ -86,11 +93,16 @@ class NativeDatabase implements Database {
       };
     } catch (error) {
       console.error('Erro ao executar runAsync:', error);
-      throw error;
+      return { lastInsertRowId: 0, changes: 0 };
     }
   }
   
   async withTransactionAsync<T>(callback: () => Promise<T>): Promise<T> {
+    if (!this.db) {
+      console.warn('Database não disponível - executando sem transação');
+      return await callback();
+    }
+    
     try {
       // Implementação manual da transação
       await this.db.execAsync('BEGIN TRANSACTION');
@@ -111,11 +123,21 @@ class NativeDatabase implements Database {
 }
 
 // Escolher a implementação baseada na plataforma
-const db = Platform.OS === 'web' ? new WebDatabase() : new NativeDatabase();
+let db: Database;
+
+if (Platform.OS === 'web') {
+  // Importar do web.ts
+  const webModule = require('./web');
+  db = webModule.db;
+} else {
+  // Usar NativeDatabase
+  db = new NativeDatabase();
+}
 
 export const initDatabase = async (): Promise<void> => {
   if (Platform.OS === 'web') {
-    console.log('Banco de dados não disponível na web');
+    const webModule = require('./web');
+    await webModule.initDatabase();
     return;
   }
 

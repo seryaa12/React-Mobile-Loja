@@ -1,5 +1,5 @@
 // services/promocaoService.ts
-import { db } from './database/native';
+import { db } from './database';
 
 export interface Promocao {
   id: number;

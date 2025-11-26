@@ -1,4 +1,3 @@
-// services/database/web.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface Database {
@@ -20,27 +19,34 @@ class WebDatabase implements Database {
       
       // Simular queries básicas
       if (query.includes('SELECT * FROM promocoes')) {
-        return (database.promocoes || []) as T[];
+        return database.promocoes || [];
       }
       
       if (query.includes('SELECT * FROM historico_promocoes')) {
-        return (database.historico_promocoes || []) as T[];
+        return database.historico_promocoes || [];
       }
       
-      if (query.includes('SELECT status, COUNT(*) as count FROM promocoes')) {
+      if (query.includes('SELECT COUNT(*) as count FROM promocoes')) {
         const promocoes = database.promocoes || [];
-        const result: { status: string; count: number }[] = [];
-        const statusCount: { [key: string]: number } = {};
-        
-        for (const promocao of promocoes) {
-          statusCount[promocao.status] = (statusCount[promocao.status] || 0) + 1;
-        }
-        
-        for (const [status, count] of Object.entries(statusCount)) {
-          result.push({ status, count });
-        }
-        
-        return result as T[];
+        return [{ count: promocoes.length }] as T[];
+      }
+      
+      if (query.includes('SELECT COUNT(*) as count FROM promocoes WHERE status = "ativa"')) {
+        const promocoes = database.promocoes || [];
+        const count = promocoes.filter((p: any) => p.status === 'ativa').length;
+        return [{ count }] as T[];
+      }
+      
+      if (query.includes('SELECT COUNT(*) as count FROM promocoes WHERE status = "expirada"')) {
+        const promocoes = database.promocoes || [];
+        const count = promocoes.filter((p: any) => p.status === 'expirada').length;
+        return [{ count }] as T[];
+      }
+      
+      if (query.includes('SELECT COUNT(*) as count FROM historico_promocoes WHERE acao = "excluída"')) {
+        const historico = database.historico_promocoes || [];
+        const count = historico.filter((h: any) => h.acao === 'excluída').length;
+        return [{ count }] as T[];
       }
       
       if (query.includes('WHERE data_fim < ? AND status = \'ativa\'')) {
@@ -53,6 +59,22 @@ class WebDatabase implements Database {
         const id = params?.[0];
         const promocoes = database.promocoes || [];
         return promocoes.filter((p: any) => p.id === id) as T[];
+      }
+      
+      if (query.includes('WHERE promocao_id = ? AND acao = "expirada"')) {
+        const promocaoId = params?.[0];
+        const historico = database.historico_promocoes || [];
+        return historico.filter((h: any) => h.promocao_id === promocaoId && h.acao === 'expirada') as T[];
+      }
+      
+      if (query.includes('ORDER BY data_criacao DESC')) {
+        const promocoes = database.promocoes || [];
+        return promocoes.sort((a: any, b: any) => new Date(b.data_criacao).getTime() - new Date(a.data_criacao).getTime()) as T[];
+      }
+      
+      if (query.includes('ORDER BY data_acao DESC')) {
+        const historico = database.historico_promocoes || [];
+        return historico.sort((a: any, b: any) => new Date(b.data_acao).getTime() - new Date(a.data_acao).getTime()) as T[];
       }
       
       return [];
