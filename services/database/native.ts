@@ -1,5 +1,6 @@
 // services/database/native.ts
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
 
 export interface Database {
   getAllAsync<T>(query: string, params?: any[]): Promise<T[]>;
@@ -8,66 +9,116 @@ export interface Database {
   withTransactionAsync<T>(callback: () => Promise<T>): Promise<T>;
 }
 
+// Implementação mock para web
+class WebDatabase implements Database {
+  async getAllAsync<T>(query: string, params?: any[]): Promise<T[]> {
+    console.warn('SQLite não disponível na web - retornando dados mock');
+    return [] as T[];
+  }
+  
+  async getFirstAsync<T>(query: string, params?: any[]): Promise<T | null> {
+    console.warn('SQLite não disponível na web - retornando null');
+    return null;
+  }
+  
+  async runAsync(query: string, params?: any[]): Promise<{ lastInsertRowId: number; changes: number }> {
+    console.warn('SQLite não disponível na web - operação simulada');
+    return { lastInsertRowId: 0, changes: 0 };
+  }
+  
+  async withTransactionAsync<T>(callback: () => Promise<T>): Promise<T> {
+    console.warn('SQLite não disponível na web - executando callback sem transação');
+    return await callback();
+  }
+}
+
+// Implementação real para native
 class NativeDatabase implements Database {
   private db: SQLite.SQLiteDatabase;
   
   constructor() {
-    this.db = SQLite.openDatabase('promocoes.db');
+    this.db = SQLite.openDatabaseSync('promocoes.db');
   }
   
   async getAllAsync<T>(query: string, params?: any[]): Promise<T[]> {
-    return new Promise((resolve, reject) => {
-      this.db.exec([{ sql: query, args: params }], false, (_, results) => {
-        if (results && results[0]) {
-          resolve(results[0].rows as T[]);
-        } else {
-          resolve([]);
-        }
-      });
-    });
+    try {
+      if (params && params.length > 0) {
+        const result = await this.db.getAllAsync<T>(query, params);
+        return result;
+      } else {
+        const result = await this.db.getAllAsync<T>(query);
+        return result;
+      }
+    } catch (error) {
+      console.error('Erro ao executar getAllAsync:', error);
+      throw error;
+    }
   }
   
   async getFirstAsync<T>(query: string, params?: any[]): Promise<T | null> {
-    const results = await this.getAllAsync<T>(query, params);
-    return results.length > 0 ? results[0] : null;
+    try {
+      if (params && params.length > 0) {
+        const result = await this.db.getFirstAsync<T>(query, params);
+        return result;
+      } else {
+        const result = await this.db.getFirstAsync<T>(query);
+        return result;
+      }
+    } catch (error) {
+      console.error('Erro ao executar getFirstAsync:', error);
+      throw error;
+    }
   }
   
   async runAsync(query: string, params?: any[]): Promise<{ lastInsertRowId: number; changes: number }> {
-    return new Promise((resolve, reject) => {
-      this.db.exec([{ sql: query, args: params }], false, (_, results) => {
-        if (results && results[0]) {
-          resolve({
-            lastInsertRowId: results[0].insertId || 0,
-            changes: results[0].rowsAffected || 0
-          });
-        } else {
-          resolve({ lastInsertRowId: 0, changes: 0 });
-        }
-      });
-    });
+    try {
+      let result: SQLite.SQLiteRunResult;
+      
+      if (params && params.length > 0) {
+        result = await this.db.runAsync(query, params);
+      } else {
+        result = await this.db.runAsync(query);
+      }
+      
+      return {
+        lastInsertRowId: result.lastInsertRowId || 0,
+        changes: result.changes || 0
+      };
+    } catch (error) {
+      console.error('Erro ao executar runAsync:', error);
+      throw error;
+    }
   }
   
   async withTransactionAsync<T>(callback: () => Promise<T>): Promise<T> {
-    return new Promise((resolve, reject) => {
-      this.db.exec([{ sql: 'BEGIN TRANSACTION', args: [] }], false, async () => {
-        try {
-          const result = await callback();
-          this.db.exec([{ sql: 'COMMIT', args: [] }], false, () => {
-            resolve(result);
-          });
-        } catch (error) {
-          this.db.exec([{ sql: 'ROLLBACK', args: [] }], false, () => {
-            reject(error);
-          });
-        }
-      });
-    });
+    try {
+      // Implementação manual da transação
+      await this.db.execAsync('BEGIN TRANSACTION');
+      
+      try {
+        const result = await callback();
+        await this.db.execAsync('COMMIT');
+        return result;
+      } catch (error) {
+        await this.db.execAsync('ROLLBACK');
+        throw error;
+      }
+    } catch (error) {
+      console.error('Erro na transação:', error);
+      throw error;
+    }
   }
 }
 
-const db = new NativeDatabase();
+// Escolher a implementação baseada na plataforma
+const db = Platform.OS === 'web' ? new WebDatabase() : new NativeDatabase();
 
 export const initDatabase = async (): Promise<void> => {
+  if (Platform.OS === 'web') {
+    console.log('Banco de dados não disponível na web');
+    return;
+  }
+
   try {
     await db.runAsync(`
       CREATE TABLE IF NOT EXISTS promocoes (
